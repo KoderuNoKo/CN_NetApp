@@ -1,2 +1,5 @@
 # CN_NetApp
-BitTorrent simulation
+Description: BitTorrent simulation
+
+## Note:
+scraps.py is for testing small things, nothing meaningful there
