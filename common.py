@@ -1,11 +1,10 @@
 import socket
 
 
-PIECE_SIZE = 512
+PIECE_SIZE = 512 * 1024 # 512KB
 CODE = 'utf-8'
 BUFFER_SIZE = 1024
 LISTEN_NUM = 10
-
 
 def get_host_default_interface_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -17,4 +16,3 @@ def get_host_default_interface_ip():
     finally:
        s.close()
     return ip
-

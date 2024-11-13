@@ -11,12 +11,16 @@ class torrent:
 
 class Tracker:
     def __init__(self, ip, port):
+        # tracker info
         self.id = DEFAULT_TRACKER_ID
         self.ip = ip
         self.port = port
         
+        # file_tracking
+        self.file_track = {}
         
-    def tracker_response(self, failure_reason: str, warning_msg: str, tracker_id: int, peers: dict) -> str:
+        
+    def tracker_response(self, failure_reason: str, warning_msg: str, tracker_id: int, peers: list) -> bytes:
         """generate a string response to the peer"""
         response = {
                     'failure_reason': failure_reason, 
@@ -24,58 +28,71 @@ class Tracker:
                     'tracker_id': tracker_id,
                     'peers': peers
                 }
-        str_response = json.dump(response)
-        print(str_response)
-        
+        str_response = json.dumps(response)
+        return str_response
     
-    def tracker_approve(self, approved=True) -> str:
-        """Approval of node request during handshaking"""
-        return 'OK'
+    # def tracker_approve(self, approved=True) -> str:
+    #     """Approval of node request during handshaking"""
+    #     return 'OK'
         
 
-    def parse_node_submit_info(self, data: bytes):
-        """TODO: Parse the message, record the files' info as a torrent file, raise exception if error occurs"""
+    def parse_node_submit_info(self, data: dict) -> None:
+        """Parse the message, record the files' info as a torrent file, raise exception if error occurs"""
+        peerinfo = data
+        peerid = peerinfo['id']
+        peerip = peerinfo['ip']
+        peerport = peerinfo['port']
+        files = peerinfo['file_info']
+        for file in files.items():
+            filename = file['name']
+            # new unregistered file
+            if filename not in self.file_track:
+                self.file_track[filename] = {
+                    'trackerip': self.ip,
+                    'piece_len': file['piece_len'],
+                    'piece_count': file['piece_count'],
+                    'seeders': {}
+                }
+            # add seeder peer
+            self.file_track[filename]['seeders'][peerid] = {
+                'peerip': peerip,
+                'peerport': peerport
+            }
         
 
     def new_connection(self, addr, conn: socket.socket):
         print(f'Serving connection from {addr}')
 
         try:
-            data = conn.recv(1024)
-            request = data.decode(common.CODE)
-            request_parts = request.split()
-
-            if request_parts[0] == 'submit_info':
-                # approve the request
-                response = self.tracker_approve()
-                conn.sendall(response.encode(common.CODE))
+            data = conn.recv(1024).decode(common.CODE)
+            request = json.loads(data)
+            print(request)
+            
+            if request['func'] == 'submit_info':
                 # get information submitted from node
                 try:
-                    data = self.parse_node_submit_info(conn.recv(common.BUFFER_SIZE))
+                    data = self.parse_node_submit_info(request)
                     response = self.tracker_response(failure_reason=None,
                                                      warning_msg=None,
                                                      tracker_id=self.id,
                                                      peers=None)
-                    conn.sendall(response.encode(common.CODE))
                 except Exception as e:
                     response = self.tracker_response(failure_reason=str(e),
                                                      warning_msg=None,
                                                      tracker_id=self.id,
                                                      peers=None)
-                    conn.sendall(response.encode(common.CODE))
-                finally:
-                    conn.close()
-                    exit()
                               
-            elif request_parts[0] == 'get_list':
-                for peerip, peerport in self.peer_manager.peerlist:
-                    response += f'{peerip}:{peerport}\n'
+            elif request['func'] == 'get_list':
+                # TODO: return a list of peers with request['magnet_text']
+                pass
+                
+                    
             else:
-                response = 'Invalid request!'
-
+                raise ValueError('Invalid request!')
+            
             conn.sendall(response.encode(common.CODE))
         except Exception as e:
-            print(f"Error occurred: {e}")
+            print(f'Error occurred while serving {addr}: {e}')
         finally:
             conn.close()
             exit()
