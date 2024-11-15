@@ -5,25 +5,18 @@ import common
 
 PORT_IPC_NODE = 12345
 
-def submit_info(args):
-    cli_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    cli_sock.connect(('localhost', PORT_IPC_NODE))
-    cli_sock.sendall(f'submit_info {args.serverip} {args.serverport}'.encode(common.CODE))
-    
-    node_rep = cli_sock.recv(1024).decode(common.CODE)
-    print(node_rep)
-    cli_sock.close()
-    return
+def submit_info():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as cli_sock:
+        cli_sock.connect(('localhost', PORT_IPC_NODE))
+        cli_sock.sendall('submit_info'.encode(common.CODE))
+        cli_sock.close()
 
-def get_list(args):
-    cli_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    cli_sock.connect(('localhost', PORT_IPC_NODE))
-    cli_sock.sendall(f'get_list {args.serverip} {args.serverport}'.encode(common.CODE))
-    
-    node_rep = cli_sock.recv(1024).decode(common.CODE)
-    print(node_rep)
-    cli_sock.close()
-    return
+
+def get_list():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as cli_sock:
+        cli_sock.connect(('localhost', PORT_IPC_NODE))
+        cli_sock.sendall(f'get_list test.txt'.encode(common.CODE))
+        cli_sock.close()
 
     
 class NodeCLI:
@@ -36,14 +29,12 @@ class NodeCLI:
     
     def add_subparsers(self):
         self.parser.add_argument('--func')
-        self.parser.add_argument('--serverip')
-        self.parser.add_argument('--serverport', type=int)
         
         
     def run(self):
         args = self.parser.parse_args()
         f = globals()[args.func]
-        f(args)
+        f()
         
 
 if __name__ == '__main__':

@@ -4,13 +4,14 @@ import os
 import json
 import argparse
 import time
+import math
 
 import common
 
 PORT_IPC_NODE = 12345
 
 class Node:
-    def __init__(self, tracker_address, peerid, ip, port):
+    def __init__(self, tracker_address: tuple[str, int], peerid: int, ip: str, port: int):
         self.tracker_address = tracker_address
         self.peerid = peerid
         self.ip = ip
@@ -28,40 +29,69 @@ class Node:
         return file_list
     
     
-    def submit_info(self):
-        """Register this peer's files with the tracker."""
+    def submit_info(self) -> dict:
+        """Register this peer's files with the tracker. Return the response showing the result to the cli"""
         file_list = self.scan_repository()
         file_list_info = []
+        
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
                 s.connect(self.tracker_address)
-
                 #s.sendall(f"Submit_info: {self.ip} {self.port}".encode('utf-8'))
                 for file_name in file_list:
                     file_info = {}
                     file_path = os.path.join(self.repository, file_name)
                     if os.path.isfile(file_path):
                         file_info['name'] = file_name
-                        file_info["file_size"] = str(os.path.getsize(file_path))
+                        file_info['piece_len'] = common.PIECE_SIZE
+                        file_info['piece_count'] = math.ceil(os.path.getsize(file_path) / file_info['piece_len'])
                         file_list_info.append(file_info)
                 # file_list_str = ";".join(file_list)
 
-                data_to_send = {
+                data_send = {
                     'func': 'submit_info',
                     'id': self.peerid, 
-                    "ip": self.ip, 
-                    "port":self.port, 
-                    "file_info": file_list_info
+                    'ip': self.ip, 
+                    'port':self.port, 
+                    'file_info': file_list_info
                     }
                 
-                json_data = json.dumps(data_to_send)
+                json_data = json.dumps(data_send)
                 s.sendall(json_data.encode('utf-8'))
-                print(f"Submit with tracker: {file_list}")
-            except Exception as e:
-                print(f"Error registering with tracker: {e}")
+                print(f'Submit files: {file_list}')
                 
+            except Exception as e:
+                print(f'submit_info() failed at node: {e}')
+                
+            finally:
+                # receive response from server
+                data_recv = s.recv(common.BUFFER_SIZE).decode(common.CODE)
+                tracker_response = json.loads(data_recv)
+                
+        return tracker_response
+    
+    
+    def get_list(self, magnet_text: str):
+        """send a magnet_text to server to request for a list of peers"""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
+            server_sock.connect(self.tracker_address)
+            data_send = {
+                'func': 'get_list',
+                'id': self.peerid, 
+                'ip': self.ip, 
+                'port':self.port, 
+                'magnet_text': magnet_text
+                }
+            server_sock.sendall(json.dumps(data_send).encode(common.CODE))
+            
+            # get response from tracker
+            data_recv = server_sock.recv(common.BUFFER_SIZE).decode(common.CODE)
+            tracker_response = json.loads(data_recv)
+            return tracker_response
+
 
     def new_server_incoming(self, conn, addr):
+        """handle new connection from other peers"""
         print(addr)
         # TODO: handle incoming connection 
         conn.sendall('Data that need to be sent!')
@@ -70,6 +100,7 @@ class Node:
     
     
     def thread_server(self, ip, port):
+        """Thread server running on peers to accept connection from other peers"""
         print("Thread server listening on {}:{}".format(ip, port))
         try:
             serversocket = socket.socket()
@@ -87,6 +118,7 @@ class Node:
             
             
     def thread_client(self, id, serverip, serverport, peerip, peerport):
+        """client thread used to connect to other peers"""
         print(f'Thread ID: {id} connecting to {serverip}:{serverport}')
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect((peerip, peerport))
@@ -95,64 +127,45 @@ class Node:
         
     
 
-    def thread_agent(self, time_fetching: int, peerip: str, peerport: int):
+    def thread_agent(self):
         print('Thread agent started!')
         
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as ipc_sock:
             ipc_sock.bind(('localhost', PORT_IPC_NODE))
             ipc_sock.listen()
             
-            try:
-                while True:
-                    conn, addr = ipc_sock.accept()
-                    cli_msg = conn.recv(1024).decode(common.CODE)
-                    msg_parts = cli_msg.split()
-                    rep = ''
-                    
-                    if msg_parts[0] == 'submit_info':
-                        serverip = msg_parts[1]
-                        serverport = int(msg_parts[2])
-                        print(f'Submitting info to server {serverip}:{serverport}')
+            while True:
+                conn, addr = ipc_sock.accept()
+                cli_msg = conn.recv(1024).decode(common.CODE)
+                msg_parts = cli_msg.split()
+                
+                print('----------------------------------------------------------------------------------------')
+                if msg_parts[0] == 'submit_info':
+                    print(f'Submitting info to tracker server at {self.tracker_address}...')
+                    rep = self.submit_info()
+                    if rep['failure_reason'] is not None:
+                        print(f'submit_info() failed at tracker: {rep['failure_reason']}')
                         
-                        # send request to server
-                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
-                            server_sock.connect((serverip, serverport))
-                            msg = f'submit_info {peerip} {peerport}'
-                            server_sock.sendall(msg.encode(common.CODE))
-                            
-                            # get response from server
-                            rep = server_sock.recv(common.BUFFER_SIZE).decode(common.CODE)
-                            
-                    elif msg_parts[0] == 'get_list':
-                        serverip = msg_parts[1]
-                        serverport = int(msg_parts[2])
-                        print(f'Requesting server {serverip}:{serverport} for list of peer...')
-                        
-                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
-                            server_sock.connect((serverip, serverport))
-                            msg = f'get_list'
-                            server_sock.sendall(msg.encode(common.CODE))
-                            
-                            # get response from server
-                            rep = server_sock.recv(common.BUFFER_SIZE).decode(common.CODE)
-                        
-                    elif msg_parts[0] == 'peer_connect':
-                        self.thread_client(1, msg_parts[1], msg_parts[2])
-                        
-                    elif msg_parts[0] == 'peer_transfer':
-                        print(f'Transfering data to {msg_parts[1]}:{msg_parts[2]} "{msg_parts[3]}"')
-                        
+                elif msg_parts[0] == 'get_list':
+                    magnet_text = msg_parts[1]
+                    print(f'Requesting tracker for torrent: {magnet_text}')
+                    rep = self.get_list(magnet_text)
+                    if rep['failure_reason'] is None:
+                        print(f'Peer list: {rep['peers']}')
                     else:
-                        print('Invalid command!')
+                        print(f'get_list() failed at server: {rep['failure_reason']}')
                     
-                    time.sleep(time_fetching)
+                elif msg_parts[0] == 'peer_connect':
+                    self.thread_client(1, msg_parts[1], msg_parts[2])
                     
-                    print(rep)    
-                    conn.sendall(rep.encode(common.CODE))
+                elif msg_parts[0] == 'peer_transfer':
+                    print(f'Transfering data to {msg_parts[1]}:{msg_parts[2]} "{msg_parts[3]}"')
                     
-            except KeyboardInterrupt:
-                print('KeyboardInterrupt! Node agent stopped!')
-                exit()
+                else:
+                    print('Invalid command!')
+                
+                
+                print(rep)    
     
     
 if __name__ == '__main__':
@@ -174,19 +187,18 @@ if __name__ == '__main__':
     peerport = 33357    
     
     node = Node((args.serverip, args.serverport), args.id, peerip, peerport)
-    node.submit_info()
+    
     # intialize server thread
-    # tserver = threading.Thread(target=node.thread_server, args=(peerip, peerport))
+    tserver = threading.Thread(target=node.thread_server, args=(peerip, peerport))
     
     # # intialize a thread for agent
-    # time_fetching = 1
-    # tagent = threading.Thread(target=node.thread_agent, args=(time_fetching, peerip, peerport))
+    time_fetching = 1
+    tagent = threading.Thread(target=node.thread_agent)
     
-    # tserver.start()
+    tserver.start()
+    tagent.start()
     
-    # tagent.start()
-    
-    # # never completed
-    # tserver.join()
-    # tagent.join()
+    # never completed
+    tserver.join()
+    tagent.join()
     
