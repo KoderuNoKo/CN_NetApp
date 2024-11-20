@@ -2,11 +2,27 @@ import socket
 import threading
 import common
 import json
+import math
 
-DEFAULT_TRACKER_ID = 1
+DEFAULT_TRACKER_ID = 1 # single centralized tracker server
 
-class torrent:
-    pass   
+class Torrent: 
+    """represent the metainfo file on tracker"""
+    def __init__(self, tracker_ip: str, filename: str, filesize: int, piece_size: int, pieces_list: list=None) -> None:
+        self.info = {
+            'name': filename,
+            'piece_length': piece_size,
+            # 'pieces': pieces_list, not yet implemented
+            'piece_count': math.ceil(filesize/piece_size)
+        }
+        self.announce = tracker_ip  # announce URL of the tracker
+        
+        
+    def to_dict(self):
+        return {
+            "metainfo": self.info,
+            "announce": self.announce
+        }
 
 
 class Tracker:
@@ -17,7 +33,7 @@ class Tracker:
         self.port = port
         
         # file_tracking
-        self.file_track = {}
+        self.torrent_track = {}
         
         
     def tracker_response(self, failure_reason: str = None, warning_msg: str = None, tracker_id: int = None, peers: list = None) -> bytes:
@@ -27,13 +43,18 @@ class Tracker:
                     'warning_msg': warning_msg, 
                     'tracker_id': tracker_id,
                     'peers': peers
-                }
+        }
         str_response = json.dumps(response)
         return str_response
     
     # def tracker_approve(self, approved=True) -> str:
     #     """Approval of node request during handshaking"""
     #     return 'OK'
+    
+    
+    def update_torrents_list(self) -> None:
+        with open('torrents_list.txt', mode='w') as file:
+            [file.write(f'File name: {self.torrent_track[info_hash]['torrent'].info['name']}\nMagnet: {info_hash}\n\n') for info_hash in self.torrent_track.keys()]
         
 
     def parse_node_submit_info(self, peer_msg: dict) -> None:
@@ -42,28 +63,28 @@ class Tracker:
         peerip = peer_msg['ip']
         peerport = peer_msg['port']
         files = peer_msg['file_info']
-        for file in files:
-            print(file)
-            filename = file['name']
-            print(filename)
-            # new unregistered file
-            if filename not in self.file_track.keys():
-                self.file_track[filename] = {
-                    'trackerip': self.ip,
-                    'piece_len': file['piece_len'],
-                    'piece_count': file['piece_count'],
-                    'seeders': set() # enfore no duplicate peer for one file
-                }
-            # add seeder peer
-            self.file_track[filename]['seeders'].add((peerid, peerip, peerport))
+        hash_codes = [common.hash_info(file) for file in files]
+        self.torrent_track = {
+            hash_code: {
+                'torrent': self.torrent_track[hash_code]['torrent']
+                if hash_code in self.torrent_track
+                else Torrent(self.id, file['name'], file['size'], file['piece_length']),
+                
+                'peers': self.torrent_track[hash_code]['peers'] + [(peerid, peerip, peerport)]
+                if hash_code in self.torrent_track
+                else [(peerid, peerip, peerport)],
+            }
+            for hash_code, file in zip(hash_codes, files)
+        }  
+        self.update_torrents_list()
             
             
-    def return_peer_list_for_file(self, file_id: str) -> list:
+    def return_peer_list_for_file(self, info_hash: str) -> list:
         """return list of peers holding a file, return None if file not found"""
-        if file_id not in self.file_track:
+        if info_hash not in self.torrent_track.keys():
             return None
         
-        return list(self.file_track[file_id]['seeders'])
+        return self.torrent_track[info_hash]['peers']
         
 
     def new_connection(self, addr, conn: socket.socket):
@@ -79,12 +100,11 @@ class Tracker:
                 data = self.parse_node_submit_info(peer_request)
                 response = self.tracker_response() # nothing to response
                                 
-            elif peer_request['func'] == 'get_list':
-                # TODO: return a list of peers with request['magnet_text']
-                file_id = peer_request['magnet_text']
-                peerlist = self.return_peer_list_for_file(file_id)
+            elif peer_request['func'] == 'GET':
+                info_hash = peer_request['magnet_text']
+                peerlist = self.return_peer_list_for_file(info_hash)
                 if peerlist is None:
-                    response = self.tracker_response(warning_msg=f'No file with name {file_id} is found! Returned empty list', 
+                    response = self.tracker_response(warning_msg=f'No file with name {info_hash} is found! Returned empty list', 
                                                         tracker_id=self.id)
                 else:
                     response = self.tracker_response(peers=peerlist)

@@ -1,10 +1,14 @@
 import socket
+import hashlib
+import json
 
 
-PIECE_SIZE = 512 * 1024 # 512KB
+PIECE_SIZE = 2**19 # 512KB
 CODE = 'utf-8'
 BUFFER_SIZE = 1024
 LISTEN_NUM = 10
+PORT_IPC_NODE = 12345
+
 
 def get_host_default_interface_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -16,3 +20,8 @@ def get_host_default_interface_ip():
     finally:
        s.close()
     return ip
+
+ 
+def hash_info(metainfo: dict) -> str:
+   metainfo_str = json.dumps(metainfo)
+   return hashlib.sha1(metainfo_str.encode(CODE)).hexdigest()

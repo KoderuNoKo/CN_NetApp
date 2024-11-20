@@ -1,4 +1,11 @@
-class File:
+class FileMan:
+    """The main class for managing all download/upload at a Peer"""
+    def __init__(self) -> None:
+        self.downloaded = 0 # total bytes downloaded
+        self.uploaded = 0   # total bytes uploaded
+
+
+class Metainfo:
     """represent a file object on node"""
     def __init__(self, tracker_ip: str) -> None:
         self.tracker_ip = tracker_ip

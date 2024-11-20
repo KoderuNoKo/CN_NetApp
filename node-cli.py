@@ -1,22 +1,29 @@
 import argparse
 import socket
 import common
+import json
 
 
-PORT_IPC_NODE = 12345
 
-def submit_info():
+def submit_info(args):
+    """submit the node info and seed the files in repo to the tracker"""
+    command = {
+        'func': 'submit_info'
+    }
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as cli_sock:
-        cli_sock.connect(('localhost', PORT_IPC_NODE))
-        cli_sock.sendall('submit_info'.encode(common.CODE))
-        cli_sock.close()
+        cli_sock.connect(('localhost', common.PORT_IPC_NODE))
+        cli_sock.sendall(json.dumps(command).encode(common.CODE))
 
 
-def get_list():
+def get_file(args):
+    """download a file"""
+    command = {
+        'func': 'get_file',
+        'magnet_text': args.magnet
+    }
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as cli_sock:
-        cli_sock.connect(('localhost', PORT_IPC_NODE))
-        cli_sock.sendall(f'get_list test.txt'.encode(common.CODE))
-        cli_sock.close()
+        cli_sock.connect(('localhost', common.PORT_IPC_NODE))
+        cli_sock.sendall(json.dumps(command).encode(common.CODE))
 
     
 class NodeCLI:
@@ -28,13 +35,17 @@ class NodeCLI:
         
     
     def add_subparsers(self):
+        # the function to execute
         self.parser.add_argument('--func')
+        
+        # for get_file
+        self.parser.add_argument('--magnet')
         
         
     def run(self):
         args = self.parser.parse_args()
         f = globals()[args.func]
-        f()
+        f(args)
         
 
 if __name__ == '__main__':

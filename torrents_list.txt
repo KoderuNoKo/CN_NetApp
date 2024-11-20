@@ -1,0 +1,6 @@
+File name: client.txt
+Magnet: 581644f9801551c9c05504af7dba164511110d42
+
+File name: test.txt
+Magnet: 24278c247d1b172199384b78f538228bf0aee217
+
