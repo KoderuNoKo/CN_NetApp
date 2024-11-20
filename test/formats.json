@@ -1,0 +1,25 @@
+{    
+    "submit_info_dict": 
+    {
+        "func": "submit_info",
+        "peerid": 1,
+        "peerip": "192.168.13.5",
+        "peerport": 11111,
+        "file_info":
+        [
+            {"name": "123.txt", "size": 10, "abc": "xyz"},
+            {"name": "456.txt", "size": 45, "abc": "789"}
+        ]
+    },
+
+    "torrent_track_dict": 
+    {
+        "hash_code": {
+            "torrent": "Torrent object",
+            "peers": [
+                ["192.168.1.1", 12345],
+                ["192.168.5.42", 45678]
+            ]
+        }
+    }
+}
