@@ -53,8 +53,10 @@ class Tracker:
     
     
     def update_torrents_list(self) -> None:
+        """Write torrents into a text file for peers to view"""
         with open('torrents_list.txt', mode='w') as file:
-            [file.write(f'File name: {self.torrent_track[info_hash]['torrent'].info['name']}\nMagnet: {info_hash}\n\n') for info_hash in self.torrent_track.keys()]
+            [file.write('File name: {}\nMagnet: {}\n\n'.format(self.torrent_track[info_hash]['torrent'].info['name'], info_hash)) 
+             for info_hash in self.torrent_track.keys()]
         
 
     def parse_node_submit_info(self, peer_msg: dict) -> None:
@@ -88,7 +90,7 @@ class Tracker:
         
 
     def new_connection(self, addr, conn: socket.socket):
-        print(f'Serving connection from {addr}')
+        print('Serving connection from {}'.format(addr))
         response = ''
 
         try:
@@ -104,18 +106,18 @@ class Tracker:
                 info_hash = peer_request['magnet_text']
                 peerlist = self.return_peer_list_for_file(info_hash)
                 if peerlist is None:
-                    response = self.tracker_response(warning_msg=f'No file with name {info_hash} is found! Returned empty list', 
+                    response = self.tracker_response(warning_msg='No file with name {} is found! Returned empty list'.format(info_hash), 
                                                         tracker_id=self.id)
                 else:
                     response = self.tracker_response(peers=peerlist)
             else:
-                raise ValueError(f'Invalid request! No function named {peer_request['func']} is found!')
+                raise ValueError('Invalid request! No function named {} is found!'.format(peer_request['func']))
                 
-            print(f'Request from peer {peer_request['id']}::{addr}\n {peer_request['func']} DONE!')
+            print('Request from peer {}::{}\n {} DONE!'.format(peer_request['id'], addr, peer_request['func']))
 
         except Exception as e:
             response = self.tracker_response(failure_reason=str(e))
-            print(f'Request from peer {peer_request['id']}::{addr}\n {peer_request['func']} FAILED!\n {e}')
+            print('Request from peer {}::{addr}\n {} FAILED!\n {}'.format(peer_request['id'], peer_request['func'], e))
             
         finally:
             conn.sendall(response.encode(common.CODE))
@@ -128,7 +130,7 @@ class Tracker:
         serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         serversocket.bind((self.ip, self.port))
         serversocket.listen(5)
-        print(f'Listening on {self.ip}:{self.port}')
+        print('Listening on {}:{}'.format(self.ip, self.port))
 
         while True:
             conn, addr = serversocket.accept()

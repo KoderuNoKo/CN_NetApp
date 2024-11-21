@@ -7,7 +7,7 @@ import time
 import math
 
 import common
-import file
+# import file
 
 class Node:
     def __init__(self, tracker_address: tuple[str, int], peerid: int, ip: str, port: int):
@@ -20,7 +20,7 @@ class Node:
         self.port = port
         
         # file
-        self.repository = f"peer_{self.port}_repository"
+        self.repository = 'peer_{}_repository'.format(self.port)
         os.makedirs(self.repository, exist_ok=True)
         self.files = {}
         self.uploaded = 0
@@ -31,7 +31,7 @@ class Node:
         """Scan the repository folder for available files."""
         file_list = os.listdir(self.repository)
         if not file_list:
-            print(f"Repository '{self.repository}' is empty. Please add files.")
+            print('Repository {} is empty. Please add files.'.format(self.repository))
         return file_list
     
     
@@ -64,10 +64,10 @@ class Node:
                 
                 json_data = json.dumps(data_send)
                 s.sendall(json_data.encode('utf-8'))
-                print(f'submit files: {file_list}')
+                print('submit files: {}'.format(file_list))
                 
             except Exception as e:
-                print(f'submit_info() failed at node: {e}')
+                print('submit_info() failed at node: {}'.format(e))
                 
             finally:
                 # receive response from server
@@ -102,11 +102,11 @@ class Node:
 
     def serve_incoming_connection(self, conn, addr):
         """handle incoming connection from other peers"""
-        print('Serving connection from {addr}')
-        msg = f'This is peer {self.peerid} responding!'
+        print('Serving connection from {}'.format(addr))
+        msg = 'This is peer {} responding!'.format(self.peerid)
         conn.sendall(msg.encode(common.CODE))
         conn.close()
-        print('Finished serving! Connection with {addr} is closed!')
+        print('Finished serving! Connection with {} is closed!'.format(addr))
         
         # TODO: implement file transfering
         exit()
@@ -114,7 +114,7 @@ class Node:
     
     def thread_server(self, ip, port):
         """Thread server running on peers to accept connection from other peers"""
-        print("Thread server listening on {}:{}".format(ip, port))
+        print('Thread server listening on {}:{}'.format(ip, port))
         try:
             serversocket = socket.socket()
             serversocket.bind((ip, port))
@@ -132,11 +132,11 @@ class Node:
             
     def thread_client(self, thread_id, node_serverid, node_serverip, node_serverport):
         """client thread used to connect to other peers"""
-        print(f'Thread ID {thread_id}: Connecting to Peer {node_serverid} at {node_serverip}:{node_serverport}')
+        print('Thread ID {}: Connecting to Peer {} at {}:{}'.format(thread_id, node_serverid, node_serverip, node_serverport))
         
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect((node_serverip, node_serverport))
-            msg = f'{self.peerid} to ! Just hanging around!'
+            msg = '{} to other peer! Just hanging around!'.format(self.peerid)
             sock.sendall(msg.encode(common.CODE))
             data = sock.recv(common.BUFFER_SIZE).decode('utf-8')
             print(data)
@@ -159,26 +159,26 @@ class Node:
                 
                 print('\n----------------------------------------------------------------------------------------\n')
                 if cli_command['func'] == 'submit_info':
-                    print(f'Submitting info to tracker server at {self.tracker_address}...')
+                    print('Submitting info to tracker server at {}...'.format(self.tracker_address))
                     rep = self.submit_info()
                     if rep['failure_reason'] is not None:
-                        print(f'submit_info() failed at tracker: {rep['failure_reason']}')
+                        print('submit_info() failed at tracker: {}'.format(rep['failure_reason']))
                         
                 elif cli_command['func'] == 'get_file':
                     magnet_text = cli_command['magnet_text']
-                    print(f'Requesting tracker for torrent: {magnet_text}')
+                    print('Requesting tracker for torrent: {}'.format(magnet_text))
                     rep = self.get_list(magnet_text)
                     
                     # request failed at server
                     if rep['failure_reason'] is not None:
-                        print(f'get_list() failed at server: {rep['failure_reason']}')
+                        print('get_list() failed at server: {}'.format(rep['failure_reason']))
                         continue
                     elif rep['warning_msg'] is not None:
-                        print(f'Warning: {rep['warning_msg']}')
+                        print('Warning: {}'.format(rep['warning_msg']))
                         
                     # TODO: proceed to connects to each peer for file
                     peerlist = rep['peers']
-                    print(f'Peer list: {peerlist}')
+                    print('Peer list: {}'.format(peerlist))
                     # TODO: peer selection algorithm
                     client_threads = [threading.Thread(target=self.thread_client, args=(peer[0], peer[1], peer[2])) for peer in peerlist]
                     [t.start() for t in client_threads]

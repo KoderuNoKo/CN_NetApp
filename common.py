@@ -16,7 +16,7 @@ def get_host_default_interface_ip():
        s.connect(('1.1.1.1', 80))    # init a connection to obtain an socket from the OS
        ip = s.getsockname()[0]      # retrieve the IP part from the socket
     except Exception:
-       ip = '127.0.0.1'     # default local loopback address
+       ip = '127.0.0.1'     # TODO: change to machine ipaddress manually when run
     finally:
        s.close()
     return ip
