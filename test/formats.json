@@ -28,7 +28,8 @@
         "info": {
             "name": "123.txt",
             "piece_length": 512,
-            "piece_count": 45
+            "piece_count": 45,
+            "pieces": "aosufsadsafdadfdsfsdfsdg"
         },
         "announce": "192.126.45.14"
     }

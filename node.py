@@ -8,16 +8,19 @@ import math
 
 import common
 # import file
+import tcp # peer wire protocol
 
+         
 class Node:
-    def __init__(self, tracker_address: tuple[str, int], peerid: int, ip: str, port: int):
+    def __init__(self, trackerip: str, trackerport: int, peerid: int, ip: str, port: int):
         # tracker
-        self.tracker_address = tracker_address
+        self.tracker_address = (trackerip, trackerport)
         
         # peer server
         self.peerid = peerid
         self.ip = ip
         self.port = port
+        self.connections = []    # set of connections with other peer
         
         # file
         self.repository = 'peer_{}_repository'.format(self.port)
@@ -102,46 +105,43 @@ class Node:
 
     def serve_incoming_connection(self, conn, addr):
         """handle incoming connection from other peers"""
-        print('Serving connection from {}'.format(addr))
-        msg = 'This is peer {} responding!'.format(self.peerid)
-        conn.sendall(msg.encode(common.CODE))
-        conn.close()
-        print('Finished serving! Connection with {} is closed!'.format(addr))
+        print('Starting connection from {}'.format(addr))
+        connection = tcp.PeerConnectionIn(self_addr=(self.ip, self.port), conn=conn, peer_addr=addr)
+        self.connections.append(connection)
         
-        # TODO: implement file transfering
+        # TODO: implement file transfering 
+        
+        print('Finished serving! Connection with {} is closed!'.format(addr))
         exit()
     
     
     def thread_server(self, ip, port):
         """Thread server running on peers to accept connection from other peers"""
         print('Thread server listening on {}:{}'.format(ip, port))
-        try:
-            serversocket = socket.socket()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as serversocket:
             serversocket.bind((ip, port))
-            
             serversocket.listen(10)
             while True:
                 conn, addr = serversocket.accept()
                 nconn = threading.Thread(target=self.serve_incoming_connection, args=(conn, addr))
                 nconn.start()
-        except KeyboardInterrupt:
-            print('KeyboardInterrupt! Server thread stopped!')
-        finally:
-            serversocket.close()
             
             
-    def thread_client(self, thread_id, node_serverid, node_serverip, node_serverport):
+    def thread_client(self, thread_id, node_serverid, node_serverip, node_serverport, info_hash):
         """client thread used to connect to other peers"""
         print('Thread ID {}: Connecting to Peer {} at {}:{}'.format(thread_id, node_serverid, node_serverip, node_serverport))
         
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.connect((node_serverip, node_serverport))
-            msg = '{} to other peer! Just hanging around!'.format(self.peerid)
-            sock.sendall(msg.encode(common.CODE))
-            data = sock.recv(common.BUFFER_SIZE).decode('utf-8')
-            print(data)
-            
+        connection = tcp.PeerConnectionOut(self_addr=(self.ip, self.port), peerid=self.peerid, info_hash=info_hash)
+
         # TODO: request file
+        
+        # with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        #     sock.connect((node_serverip, node_serverport))
+        #     msg = '{} to other peer! Just hanging around!'.format(self.peerid)
+        #     sock.sendall(msg.encode(common.CODE))
+        #     data = sock.recv(common.BUFFER_SIZE).decode(common.CODE)
+        #     print(data)
+            
         exit()
         
     
@@ -180,7 +180,7 @@ class Node:
                     peerlist = rep['peers']
                     print('Peer list: {}'.format(peerlist))
                     # TODO: peer selection algorithm
-                    client_threads = [threading.Thread(target=self.thread_client, args=(peer[0], peer[1], peer[2])) for peer in peerlist]
+                    client_threads = [threading.Thread(target=self.thread_client, args=(i, peer[0], peer[1], peer[2], magnet_text)) for i, peer in enumerate(peerlist)]
                     [t.start() for t in client_threads]
                     [t.join() for t in client_threads]
                     
