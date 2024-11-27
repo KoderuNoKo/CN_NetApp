@@ -1,26 +1,72 @@
 import socket
 import threading
 import os
-import json
 import argparse
-import time
-import math
 
 import common
 # import file
-import tcp # peer wire protocol
+import tcp  # peer wire protocol 
 
+
+class Downloader:
+    def __init__(self, info_hash, peerlist, self_bitfield) -> None:
+        self.info_hash = info_hash
+        self.peerlist = peerlist
+        self.self_bitfield = self_bitfield
+        
+        self.returned_bitfields = dict()                    # bitfields returned by server nodes, updated by multiple thread_client()
+        self._lock_returned_bitfields = threading.Lock()    # lock to protect returned_bitfields
+        self.request_queue = list()                         # result returned by select_peer(), thread_client() download based on this
+        self._select_completed = threading.Condition()      # notify the threads to start downloading after selection is completed
+        
+        
+    def start_download(self):
+        # create threads to connect to server nodes
+        [threading.Thread(target=self.thread_client, args=(peer[0], peer[1], peer[2], self.info_hash)) for peer in (self.peerlist)]
+        
+        # As the threads are created, they obtain bitfield immediately after handshake
+        # then use the bitfields obtained to select peer
+        self.select_peer()
+        
+    
+    def thread_client(self, node_serverid, node_serverip, node_serverport, info_hash) -> None:
+        """client thread that to connect to 1 other peer"""
+        # establish connection (handshake)
+        print('Thread ID {}: Connecting to Peer {} at {}:{}'.format(threading.get_ident(), node_serverid, node_serverip, node_serverport))
+        connection = tcp.PeerConnectionOut(peerid=node_serverid, info_hash=info_hash)
+        
+        # return the bitfield obtained after handshake
+        with self._lock_returned_bitfields:
+            self.request_queue[node_serverid] = connection.bitfield
+        
+        # download from target peer
+        with self._select_completed:    # wait for select_peer() to complete
+            # TODO: read from self.request_queue and request for pieces
+            connection.request()
+            
+        exit()
+        
+    
+    def select_peer(self) -> list:
+        """TODO: decide to request which piece(s) from which peer
+
+        Args:
+            bitfields (dict): peerid: bitfield
+
+        Returns:
+            list: a list of tuples (peerid, piece_index)
+        """
+        pass
          
 class Node:
     def __init__(self, trackerip: str, trackerport: int, peerid: int, ip: str, port: int):
         # tracker
         self.tracker_address = (trackerip, trackerport)
         
-        # peer server
+        # peer wire protocol
         self.peerid = peerid
         self.ip = ip
         self.port = port
-        self.connections = []    # set of connections with other peer
         
         # file
         self.repository = 'peer_{}_repository'.format(self.port)
@@ -63,10 +109,10 @@ class Node:
                     'ip': self.ip, 
                     'port':self.port, 
                     'file_info': file_list_info
-                    }
+                }
                 
-                json_data = json.dumps(data_send)
-                s.sendall(json_data.encode('utf-8'))
+                data_raw = common.create_raw_msg(data_send)
+                s.sendall(data_raw.encode('utf-8'))
                 print('submit files: {}'.format(file_list))
                 
             except Exception as e:
@@ -74,8 +120,8 @@ class Node:
                 
             finally:
                 # receive response from server
-                data_recv = s.recv(common.BUFFER_SIZE).decode(common.CODE)
-                tracker_response = json.loads(data_recv)
+                data_raw = s.recv(common.BUFFER_SIZE)
+                tracker_response = common.parse_raw_msg(data_raw)
                 
         return tracker_response
     
@@ -95,22 +141,26 @@ class Node:
                 'event': 'started',
                 'magnet_text': magnet_text
             }
-            server_sock.sendall(json.dumps(data_send).encode(common.CODE))
+            data_raw = common.create_raw_msg(data_send)
+            server_sock.sendall(data_raw)
             
             # get response from tracker
-            data_recv = server_sock.recv(common.BUFFER_SIZE).decode(common.CODE)
-            tracker_response = json.loads(data_recv)
+            data_raw = server_sock.recv(common.BUFFER_SIZE)
+            tracker_response = common.parse_raw_msg(data_raw)
             return tracker_response
 
 
-    def serve_incoming_connection(self, conn, addr):
+    def serve_incoming_connection(self, conn: socket.socket, addr:socket._RetAddress):
         """handle incoming connection from other peers"""
         print('Starting connection from {}'.format(addr))
-        connection = tcp.PeerConnectionIn(self_addr=(self.ip, self.port), conn=conn, peer_addr=addr)
-        self.connections.append(connection)
-        
-        # TODO: implement file transfering 
-        
+        connection = tcp.PeerConnectionIn(self_addr=(self.ip, self.port), conn=conn, peer_addr=addr)  
+        while connection.is_active:
+            msg_raw = conn.recv(common.CODE)
+            msg = common.parse_raw_msg(msg_raw)
+            if tcp.MsgType(msg['type'] == tcp.MsgType.BITFIELD):
+                connection.bitfield()
+            if tcp.MsgType(msg['type']) == tcp.MsgType.REQUEST:
+                connection.piece(msg['index'])
         print('Finished serving! Connection with {} is closed!'.format(addr))
         exit()
     
@@ -125,25 +175,6 @@ class Node:
                 conn, addr = serversocket.accept()
                 nconn = threading.Thread(target=self.serve_incoming_connection, args=(conn, addr))
                 nconn.start()
-            
-            
-    def thread_client(self, thread_id, node_serverid, node_serverip, node_serverport, info_hash):
-        """client thread used to connect to other peers"""
-        print('Thread ID {}: Connecting to Peer {} at {}:{}'.format(thread_id, node_serverid, node_serverip, node_serverport))
-        
-        connection = tcp.PeerConnectionOut(self_addr=(self.ip, self.port), peerid=self.peerid, info_hash=info_hash)
-
-        # TODO: request file
-        
-        # with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        #     sock.connect((node_serverip, node_serverport))
-        #     msg = '{} to other peer! Just hanging around!'.format(self.peerid)
-        #     sock.sendall(msg.encode(common.CODE))
-        #     data = sock.recv(common.BUFFER_SIZE).decode(common.CODE)
-        #     print(data)
-            
-        exit()
-        
     
 
     def thread_agent(self):
@@ -155,7 +186,8 @@ class Node:
             
             while True:
                 conn, addr = ipc_sock.accept()
-                cli_command = json.loads(conn.recv(common.BUFFER_SIZE).decode(common.CODE))
+                cli_command_raw = conn.recv(common.BUFFER_SIZE)
+                cli_command = common.parse_raw_msg(cli_command_raw)
                 
                 print('\n----------------------------------------------------------------------------------------\n')
                 if cli_command['func'] == 'submit_info':
@@ -173,12 +205,15 @@ class Node:
                     if rep['failure_reason'] is not None:
                         print('get_list() failed at server: {}'.format(rep['failure_reason']))
                         continue
+                    
+                    
                     elif rep['warning_msg'] is not None:
                         print('Warning: {}'.format(rep['warning_msg']))
                         
                     # TODO: proceed to connects to each peer for file
                     peerlist = rep['peers']
                     print('Peer list: {}'.format(peerlist))
+                    
                     # TODO: peer selection algorithm
                     client_threads = [threading.Thread(target=self.thread_client, args=(i, peer[0], peer[1], peer[2], magnet_text)) for i, peer in enumerate(peerlist)]
                     [t.start() for t in client_threads]

@@ -1,6 +1,5 @@
 import socket
 import threading
-import json
 from enum import Enum
 
 import common
@@ -8,45 +7,50 @@ import common
 
 class MsgType(Enum):
     HANDSHAKE = 0       # first msg exhanged between peers
-    BITFIELD = 1        # notify the requesting peer of the pieces it has
-    CHOKE = 2           # update state info
-    UNCHOKE = 3         # ...
-    INTERESTED = 4      # ...
-    NOT_INTERESTED = 5  # ...
-    REQUEST = 6         # request for a piece with torrent info_hash + index
+    BITFIELD = 1        # notify the requesting peer of the pieces that it has
+    # CHOKE = 2           # update state info
+    # UNCHOKE = 3         # ...
+    # INTERESTED = 4      # ...
+    # NOT_INTERESTED = 5  # ...
+    REQUEST = 6         # request for a piece in torrent using index
     PIECE = 7           # send a piece away
+    END = 8             # closing connection
 
 
 class PeerConnection:
-    """A management template for 1 peer to manage the connection with 1 other peer"""
-    def __init__(self, selfid, self_addr, peerid, peer_addr, info_hash) -> None:
+    """A management template for 1 peer to manage the connection with another peer"""
+    # downloaded = dict()
+    # uploaded = dict()
+    # lock = threading.Lock()     # ensure thread_safety
+    def __init__(self, peerid, peer_addr, info_hash) -> None:
         # connection information
-        self.selfid = selfid
-        self.self_addr = self_addr
+        # self.selfid = selfid
+        # self.self_addr = self_addr 
         self.peerid = peerid
         self.peer_addr = peer_addr
         
         # state information
-        self.am_choking = True          # this peer is choking the target peer
-        self.am_interested = False      # this peer is interested in the target peer
-        self.peer_choking = True        # the target peer is choking this peer
-        self.peer_interested = False    # the target peer is interested in this peer
-        self.active_status = True       # the connection is alive 
+        self.is_active = True       # the connection is alive
+        # with PeerConnection.lock:
+        #     PeerConnection.downloaded[peerid] = 0
+        #     PeerConnection.uploaded[peerid] = 0
+        # self.am_choking = True          # this peer is choking the target peer
+        # self.am_interested = False      # this peer is interested in the target peer
+        # self.peer_choking = True        # the target peer is choking this peer
+        # self.peer_interested = False    # the target peer is interested in this peer
         
         # other information
         self.info_hash = info_hash  # info_hash info included in the handshake message
-        self.downloaded = 0         # amount of data the target peer downloaded from this peer
-        self.uploaded = 0           # amount of data the target peer uploaded to this peer
         
         
-    def control_am(self, choking: bool, interested: bool):
-        self.am_choking = choking
-        self.am_interested = interested
+    # def control_am(self, choking: bool, interested: bool):
+    #     self.am_choking = choking
+    #     self.am_interested = interested
         
         
-    def control_peer(self, choking: bool, interested: bool):
-        self.peer_choking = choking
-        self.peer_interested = interested
+    # def control_peer(self, choking: bool, interested: bool):
+    #     self.peer_choking = choking
+    #     self.peer_interested = interested
                 
         
     # def to_dict(self):
@@ -60,40 +64,47 @@ class PeerConnection:
     
 class PeerConnectionIn(PeerConnection):
     """Handle incoming connection from another peer"""
-    def __init__(self, selfid, self_addr, connection: socket.socket, peer_addr: str) -> None:
+    def __init__(self, conn: socket.socket, peer_addr: str) -> None:
         # establish connection
-        self.conn = connection
+        self.conn = conn
         peerid, info_hash = self.accept_handshake()
-        super().__init__(selfid, self_addr, peerid, peer_addr, info_hash)
-        
+        if peerid is None:
+            return
+        super().__init__(peerid, peer_addr, info_hash)
+        self.bitfield()
     
-    def __del__(self):
-        self.conn.close()
     
-    
-    def accept_handshake(self) -> dict: 
+    def accept_handshake(self) -> dict:
         """receive + parse the incomming handshake msg"""
         msg_raw = self.conn.recv(common.BUFFER_SIZE)
-        msg = json.loads(msg_raw.decode(common.CODE))
+        msg = common.parse_raw_msg(msg_raw)
         if MsgType(msg['type']) != MsgType.HANDSHAKE:
-            raise Exception('Error! Not a handshake request!')
+            self.terminate_connection(reason='Error! Not a handshake message!')
+            return None, None
         return (msg['peerid'], msg['info_hash'])
     
     
-    def bitfield(self, bitfield: str):
-        """TODO: send a bitfield msg to target peer"""    
+    def bitfield(self):
+        """TODO: send a bitfield msg to target peer"""
+        pass
     
     
     def piece(self, index: int) -> None:
         """TODO: send msg with data to target peer"""
         pass
+    
+    
+    def terminate_connection(self, reason: str) -> None:
+        reply = dict(type=MsgType.END.value(), reason=reason)
+        reply_raw = common.create_raw_msg(reply)
+        self.conn.sendall(reply_raw)
+        self.is_active = False
 
-        
         
 class PeerConnectionOut(PeerConnection):
     """Handle connection to another peer"""
-    def __init__(self, selfid, self_addr, peerid, peer_addr, info_hash) -> None:
-        super().__init__(selfid, self_addr, peerid, peer_addr, info_hash)
+    def __init__(self, peerid, peer_addr, info_hash) -> None:
+        super().__init__(peerid, peer_addr, info_hash)
         # establish connection
         self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.conn.connect(self.peer_addr)
@@ -101,7 +112,8 @@ class PeerConnectionOut(PeerConnection):
         
         # receive bitfield info from peer
         msg_raw = self.conn.recv(common.BUFFER_SIZE)
-        msg = json.loads(msg_raw.decode(common.CODE))
+        msg = common.parse_raw_msg(msg_raw)
+        self.bitfield = msg['bitfield']
         
         
     def handshake(self):
@@ -111,11 +123,10 @@ class PeerConnectionOut(PeerConnection):
             'peerid': self.selfid,
             'info_hash': self.info_hash
         }
-        msg_raw = json.dumps(msg).encode(common.CODE)
+        msg_raw = common.create_raw_msg(msg)
         self.conn.sendall(msg_raw)
         
         
     def request(self, index) -> bytes:
         """TODO: request data from target peer"""
         pass 
-        

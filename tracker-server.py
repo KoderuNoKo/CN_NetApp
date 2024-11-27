@@ -1,7 +1,6 @@
 import socket
 import threading
 import common
-import json
 import math
 
 DEFAULT_TRACKER_ID = 1 # single centralized tracker server
@@ -44,7 +43,7 @@ class Tracker:
                     'tracker_id': tracker_id,
                     'peers': peers
         }
-        str_response = json.dumps(response)
+        str_response = common.create_raw_msg(response)
         return str_response
     
     # def tracker_approve(self, approved=True) -> str:
@@ -94,12 +93,12 @@ class Tracker:
         response = ''
 
         try:
-            data = conn.recv(1024).decode(common.CODE)
-            peer_request = json.loads(data)
+            data_raw = conn.recv(common.BUFFER_SIZE)
+            peer_request = common.parse_raw_msg(data_raw)
             
             if peer_request['func'] == 'submit_info':
                 # get information submitted from node
-                data = self.parse_node_submit_info(peer_request)
+                self.parse_node_submit_info(peer_request)
                 response = self.tracker_response() # nothing to response
                                 
             elif peer_request['func'] == 'GET':

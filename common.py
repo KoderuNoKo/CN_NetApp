@@ -25,3 +25,13 @@ def get_host_default_interface_ip():
 def hash_info(metainfo: dict) -> str:
    metainfo_str = json.dumps(metainfo)
    return hashlib.sha1(metainfo_str.encode(CODE)).hexdigest()
+
+
+def parse_raw_msg(msg_raw: bytes) -> dict:
+   """Parse the incomming raw bytes into a dict"""
+   return json.loads(msg_raw.decode(CODE))
+
+
+def create_raw_msg(msg: dict) -> bytes:
+   """translate a dict into raw bytes"""
+   return json.dumps(msg).encode(CODE)
