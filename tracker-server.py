@@ -35,16 +35,14 @@ class Tracker:
         self.torrent_track = {}
         
         
-    def tracker_response(self, failure_reason: str = None, warning_msg: str = None, tracker_id: int = None, peers: list = None) -> bytes:
+    def tracker_response(self, failure_reason: str = None, warning_msg: str = None, tracker_id: int = None, peers: list = None) -> dict:
         """generate a string response to the peer"""
-        response = {
+        return {
                     'failure_reason': failure_reason, 
                     'warning_msg': warning_msg, 
                     'tracker_id': tracker_id,
                     'peers': peers
         }
-        str_response = common.create_raw_msg(response)
-        return str_response
     
     # def tracker_approve(self, approved=True) -> str:
     #     """Approval of node request during handshaking"""
@@ -60,6 +58,7 @@ class Tracker:
 
     def parse_node_submit_info(self, peer_msg: dict) -> None:
         """Parse the message, record the files' info as a torrent file, raise exception if error occurs"""
+        # TODO: fix new record remove the old one
         peerid = peer_msg['id']
         peerip = peer_msg['ip']
         peerport = peer_msg['port']
@@ -119,7 +118,8 @@ class Tracker:
             print('Request from peer {}::{addr}\n {} FAILED!\n {}'.format(peer_request['id'], peer_request['func'], e))
             
         finally:
-            conn.sendall(response.encode(common.CODE))
+            response_raw = common.create_raw_msg(response)
+            conn.sendall(response_raw)
             conn.close()
         
         exit()

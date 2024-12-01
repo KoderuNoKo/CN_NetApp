@@ -7,8 +7,9 @@
         "peerport": 11111,
         "file_info":
         [
-            {"name": "123.txt", "size": 10, "abc": "xyz"},
-            {"name": "456.txt", "size": 45, "abc": "789"}
+            {"name": "123.txt", "size": 10, "info_hash": "dlksabfdsjbfkajbsdakshjash"},
+            {"name": "456.txt", "size": 45, "info_hash": "aeugreinkasdnjadsdsasdasda"},
+            {"name": "iok.yhs", "size": 45, "info_hash": "aeugreinkasdnjadsdsasdasda"}
         ]
     },
 

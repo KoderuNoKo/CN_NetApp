@@ -1,138 +1,69 @@
-import math
-import json
-import hashlib
+import random
 
+# Example: 10 pieces and 5 peers
+num_pieces = 10
+peer_bitfields = {
+    "peer_1": [1, 0, 1, 1, 0, 0, 1, 0, 1, 0],  # Peer 1 has pieces 1, 3, 4, 6, 8
+    "peer_2": [0, 1, 1, 0, 1, 1, 0, 1, 0, 1],  # Peer 2 has pieces 2, 3, 5, 6, 8, 10
+    "peer_3": [1, 1, 0, 1, 0, 1, 0, 1, 0, 1],  # Peer 3 has pieces 1, 2, 4, 6, 8, 10
+    "peer_4": [1, 0, 0, 1, 1, 0, 1, 1, 0, 0],  # Peer 4 has pieces 1, 4, 6, 7
+    "peer_5": [0, 1, 0, 0, 1, 1, 1, 0, 0, 1],  # Peer 5 has pieces 2, 5, 6, 10
+}
 
-def hash_info(metainfo: dict) -> str:
-   metainfo_str = json.dumps(metainfo)
-   return hashlib.sha1(metainfo_str.encode('utf-8')).hexdigest()
+# Function to calculate how many peers have each piece
+def calculate_piece_availability(peer_bitfields):
+    piece_availability = [0] * num_pieces  # Initialize the availability count for each piece
+    for bitfield in peer_bitfields.values():
+        for i, has_piece in enumerate(bitfield):
+            if has_piece:
+                piece_availability[i] += 1
+    return piece_availability
 
-
-class Torrent: 
-    """represent the metainfo file on tracker"""
-    def __init__(self, tracker_ip: str, filename: str, filesize: int, piece_size: int, pieces_list: list) -> None:
-        self.info = {
-            'name': filename,
-            'piece_length': piece_size,
-            'pieces': pieces_list,
-            'piece_count': math.ceil(filesize/piece_size)
-        }
-        self.announce = tracker_ip  # announce URL of the tracker
-        
-        
-    def to_dict(self):
-        return {
-            "metainfo": self.info,
-            "announce": self.announce
-        }
-
-
-class Tracker:
-    def __init__(self, ip, port):
-        # tracker info
-        self.id = 1
-        self.ip = ip
-        self.port = port
-        
-        # file_tracking
-        self.torrent_track = dict()
-        
-        
-    def tracker_response(self, failure_reason: str = None, warning_msg: str = None, tracker_id: int = None, peers: list = None) -> bytes:
-        """generate a string response to the peer"""
-        response = {
-                    'failure_reason': failure_reason, 
-                    'warning_msg': warning_msg, 
-                    'tracker_id': tracker_id,
-                    'peers': peers
-        }
-        str_response = json.dumps(response)
-        return str_response
+# Function to select peers as evenly as possible
+def select_peers_evenly(peer_bitfields, piece_availability):
+    # Create a list to track which pieces have been assigned to each peer
+    peer_piece_count = {peer: 0 for peer in peer_bitfields}  # Initialize count of pieces each peer has
     
-    # def tracker_approve(self, approved=True) -> str:
-    #     """Approval of node request during handshaking"""
-    #     return 'OK'
+    # List to track which pieces need to be assigned
+    pieces_needed = list(range(num_pieces))  # All piece indexes
+    
+    # Track available peers for each piece
+    piece_peers = {i: [] for i in range(num_pieces)}
+    for peer, bitfield in peer_bitfields.items():
+        for i, has_piece in enumerate(bitfield):
+            if has_piece:
+                piece_peers[i].append(peer)
+    
+    # List to store the selected peers for each piece
+    selected_peers_for_pieces = [None] * num_pieces
+    
+    for piece_index in pieces_needed:
+        # Get the list of peers that have this piece
+        available_peers = piece_peers[piece_index]
         
-
-    def parse_node_submit_info(self, peer_msg: dict) -> None:
-        """Parse the message, record the files' info as a torrent file, raise exception if error occurs"""
-        peerid = peer_msg['id']
-        peerip = peer_msg['ip']
-        peerport = peer_msg['port']
-        files = peer_msg['file_info']
-        hash_codes = [hash_info(file) for file in files]
-        self.torrent_track = {
-            hash_code: {
-                'torrent': self.torrent_track[hash_code]['torrent']
-                if hash_code in self.torrent_track
-                else Torrent(self.id, file['name'], file['size'], file['piece_size'], file['pieces']),
-                
-                'peers': self.torrent_track[hash_code]['peers'] + [(peerid, peerip, peerport)]
-                if hash_code in self.torrent_track
-                else [(peerid, peerip, peerport)],
-            }
-            for hash_code, file in zip(hash_codes, files)
-        }
-
+        # Sort peers by how many pieces they already have (select the peer with the least pieces)
+        available_peers.sort(key=lambda peer: peer_piece_count[peer])
         
+        # Select the peer with the least number of pieces already assigned
+        selected_peer = available_peers[0]
         
-peer_msg_new_files = {
-    "id": "peer1",
-    "ip": "192.168.1.10",
-    "port": 6881,
-    "file_info": [
-        {
-            "name": "file1.txt",
-            "size": 100,
-            "piece_size": 10,
-            "pieces": ["hash1", "hash2"]
-        },
-        {
-            "name": "file2.txt",
-            "size": 200,
-            "piece_size": 20,
-            "pieces": ["hash3", "hash4"]
-        }
-    ]
-}
-
-peer_msg_existing_files = {
-    "id": "peer2",
-    "ip": "192.168.1.11",
-    "port": 6882,
-    "file_info": [
-        {
-            "name": "file1.txt",
-            "size": 100,
-            "piece_size": 10,
-            "pieces": ["hash1", "hash2"]
-        }
-    ]
-}
-
-peer_msg_mixed_files = {
-    "id": "peer3",
-    "ip": "192.168.1.12",
-    "port": 6883,
-    "file_info": [
-        {
-            "name": "file1.txt",
-            "size": 100,
-            "piece_size": 10,
-            "pieces": ["hash1", "hash2"]
-        },
-        {
-            "name": "file3.txt",
-            "size": 300,
-            "piece_size": 30,
-            "pieces": ["hash5", "hash6"]
-        }
-    ]
-}
-
+        # Assign the selected peer to this piece
+        selected_peers_for_pieces[piece_index] = selected_peer
         
-tracker = Tracker("1.1.1.1", 4567)
-tracker.parse_node_submit_info(peer_msg_new_files)
-tracker.parse_node_submit_info(peer_msg_existing_files)
-tracker.parse_node_submit_info(peer_msg_mixed_files)
-print(json.dumps(tracker.torrent_track, indent=4, default=lambda o: o.to_dict()))
+        # Update the peer's piece count
+        peer_piece_count[selected_peer] += 1
+
+        print(f"Piece {piece_index + 1} is assigned to {selected_peer}.")
+    
+    return selected_peers_for_pieces
+
+# Calculate piece availability
+piece_availability = calculate_piece_availability(peer_bitfields)
+
+# Select peers evenly
+selected_peers_for_pieces = select_peers_evenly(peer_bitfields, piece_availability)
+
+# Print the final assignments of peers to pieces
+print("\nFinal selection of peers for each piece:")
+for piece_index, peer in enumerate(selected_peers_for_pieces):
+    print(f"Piece {piece_index + 1} is assigned to {peer}.")
