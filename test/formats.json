@@ -1,0 +1,37 @@
+{    
+    "submit_info_dict": 
+    {
+        "func": "submit_info",
+        "peerid": 1,
+        "peerip": "192.168.13.5",
+        "peerport": 11111,
+        "file_info":
+        [
+            {"name": "123.txt", "size": 10, "info_hash": "dlksabfdsjbfkajbsdakshjash"},
+            {"name": "456.txt", "size": 45, "info_hash": "aeugreinkasdnjadsdsasdasda"},
+            {"name": "iok.yhs", "size": 45, "info_hash": "aeugreinkasdnjadsdsasdasda"}
+        ]
+    },
+
+    "torrent_track_dict": 
+    {
+        "hash_code": {
+            "torrent": "Torrent object",
+            "peers": [
+                ["192.168.1.1", 12345],
+                ["192.168.5.42", 45678]
+            ]
+        }
+    },
+
+    "Torrent":
+    {
+        "info": {
+            "name": "123.txt",
+            "piece_length": 512,
+            "piece_count": 45,
+            "pieces": "aosufsadsafdadfdsfsdfsdg"
+        },
+        "announce": "192.126.45.14"
+    }
+}

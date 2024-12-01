@@ -1,91 +1,135 @@
 import socket
 import threading
 import common
-import json
+import math
 
-DEFAULT_TRACKER_ID = 1
+DEFAULT_TRACKER_ID = 1 # single centralized tracker server
 
-class torrent:
-    pass   
+class Torrent: 
+    """represent the metainfo file on tracker"""
+    def __init__(self, tracker_ip: str, filename: str, filesize: int, piece_size: int, pieces_list: list=None) -> None:
+        self.info = {
+            'name': filename,
+            'piece_length': piece_size,
+            # 'pieces': pieces_list, not yet implemented
+            'piece_count': math.ceil(filesize/piece_size)
+        }
+        self.announce = tracker_ip  # announce URL of the tracker
+        
+        
+    def to_dict(self):
+        return {
+            "metainfo": self.info,
+            "announce": self.announce
+        }
 
 
 class Tracker:
     def __init__(self, ip, port):
+        # tracker info
         self.id = DEFAULT_TRACKER_ID
         self.ip = ip
         self.port = port
         
+        # file_tracking
+        self.torrent_track = {}
         
-    def tracker_response(self, failure_reason: str, warning_msg: str, tracker_id: int, peers: dict) -> str:
+        
+    def tracker_response(self, failure_reason: str = None, warning_msg: str = None, tracker_id: int = None, peers: list = None) -> dict:
         """generate a string response to the peer"""
-        response = {
+        return {
                     'failure_reason': failure_reason, 
                     'warning_msg': warning_msg, 
                     'tracker_id': tracker_id,
                     'peers': peers
-                }
-        str_response = json.dump(response)
-        print(str_response)
-        
+        }
     
-    def tracker_approve(self, approved=True) -> str:
-        """Approval of node request during handshaking"""
-        return 'OK'
+    # def tracker_approve(self, approved=True) -> str:
+    #     """Approval of node request during handshaking"""
+    #     return 'OK'
+    
+    
+    def update_torrents_list(self) -> None:
+        """Write torrents into a text file for peers to view"""
+        with open('torrents_list.txt', mode='w') as file:
+            [file.write('File name: {}\nMagnet: {}\n\n'.format(self.torrent_track[info_hash]['torrent'].info['name'], info_hash)) 
+             for info_hash in self.torrent_track.keys()]
         
 
-    def parse_node_submit_info(self, data: bytes):
-        """TODO: Parse the message, record the files' info as a torrent file, raise exception if error occurs"""
+    def parse_node_submit_info(self, peer_msg: dict) -> None:
+        """Parse the message, record the files' info as a torrent file, raise exception if error occurs"""
+        # TODO: fix new record remove the old one
+        peerid = peer_msg['id']
+        peerip = peer_msg['ip']
+        peerport = peer_msg['port']
+        files = peer_msg['file_info']
+        hash_codes = [common.hash_info(file) for file in files]
+        self.torrent_track = {
+            hash_code: {
+                'torrent': self.torrent_track[hash_code]['torrent']
+                if hash_code in self.torrent_track
+                else Torrent(self.id, file['name'], file['size'], file['piece_length']),
+                
+                'peers': self.torrent_track[hash_code]['peers'] + [(peerid, peerip, peerport)]
+                if hash_code in self.torrent_track
+                else [(peerid, peerip, peerport)],
+            }
+            for hash_code, file in zip(hash_codes, files)
+        }  
+        self.update_torrents_list()
+            
+            
+    def return_peer_list_for_file(self, info_hash: str) -> list:
+        """return list of peers holding a file, return None if file not found"""
+        if info_hash not in self.torrent_track.keys():
+            return None
+        
+        return self.torrent_track[info_hash]['peers']
         
 
     def new_connection(self, addr, conn: socket.socket):
-        print(f'Serving connection from {addr}')
+        print('Serving connection from {}'.format(addr))
+        response = ''
 
         try:
-            data = conn.recv(1024)
-            request = data.decode(common.CODE)
-            request_parts = request.split()
-
-            if request_parts[0] == 'submit_info':
-                # approve the request
-                response = self.tracker_approve()
-                conn.sendall(response.encode(common.CODE))
+            data_raw = conn.recv(common.BUFFER_SIZE)
+            peer_request = common.parse_raw_msg(data_raw)
+            
+            if peer_request['func'] == 'submit_info':
                 # get information submitted from node
-                try:
-                    data = self.parse_node_submit_info(conn.recv(common.BUFFER_SIZE))
-                    response = self.tracker_response(failure_reason=None,
-                                                     warning_msg=None,
-                                                     tracker_id=self.id,
-                                                     peers=None)
-                    conn.sendall(response.encode(common.CODE))
-                except Exception as e:
-                    response = self.tracker_response(failure_reason=str(e),
-                                                     warning_msg=None,
-                                                     tracker_id=self.id,
-                                                     peers=None)
-                    conn.sendall(response.encode(common.CODE))
-                finally:
-                    conn.close()
-                    exit()
-                              
-            elif request_parts[0] == 'get_list':
-                for peerip, peerport in self.peer_manager.peerlist:
-                    response += f'{peerip}:{peerport}\n'
+                self.parse_node_submit_info(peer_request)
+                response = self.tracker_response() # nothing to response
+                                
+            elif peer_request['func'] == 'GET':
+                info_hash = peer_request['magnet_text']
+                peerlist = self.return_peer_list_for_file(info_hash)
+                if peerlist is None:
+                    response = self.tracker_response(warning_msg='No file with name {} is found! Returned empty list'.format(info_hash), 
+                                                        tracker_id=self.id)
+                else:
+                    response = self.tracker_response(peers=peerlist)
             else:
-                response = 'Invalid request!'
+                raise ValueError('Invalid request! No function named {} is found!'.format(peer_request['func']))
+                
+            print('Request from peer {}::{}\n {} DONE!'.format(peer_request['id'], addr, peer_request['func']))
 
-            conn.sendall(response.encode(common.CODE))
         except Exception as e:
-            print(f"Error occurred: {e}")
+            response = self.tracker_response(failure_reason=str(e))
+            print('Request from peer {}::{addr}\n {} FAILED!\n {}'.format(peer_request['id'], peer_request['func'], e))
+            
         finally:
+            response_raw = common.create_raw_msg(response)
+            conn.sendall(response_raw)
             conn.close()
-            exit()
+        
+        exit()
 
 
     def server_program(self):
         serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         serversocket.bind((self.ip, self.port))
         serversocket.listen(5)
-        print(f'Listening on {self.ip}:{self.port}')
+        print('Listening on {}:{}'.format(self.ip, self.port))
 
         while True:
             conn, addr = serversocket.accept()
