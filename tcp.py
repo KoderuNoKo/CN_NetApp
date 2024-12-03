@@ -1,24 +1,27 @@
-import socket
-import threading
-from enum import Enum
 
-# import file
+# TODO: Deal with sending bytes in json message
+
+import socket
+from enum import Enum
+import base64
+
+import file
 import common
 
 
-class File:
-    """Empty sample class, represent a file object"""
-    def __init__(self, info_hash: str, num_piece: int) -> None:
-        self.info_hash = info_hash
-        self.num_piece = num_piece
+# class File:
+#     """Empty sample class, represent a file object"""
+#     def __init__(self, info_hash: str, num_piece: int) -> None:
+#         self.info_hash = info_hash
+#         self.num_piece = num_piece
     
     
-    def get_piece_with_index(self, index: int):
-        return 'This is piece {} of file {}\n'.format(index, self.info_hash)
+#     def get_piece_with_index(self, index: int):
+#         return 'This is piece {} of file {}\n'.format(index, self.info_hash)
     
     
-    def get_bitfield(self) -> str:
-        return str.join('', ['1' for i in range(self.num_piece)])
+#     def get_bitfield(self) -> str:
+#         return str.join('', ['1' for i in range(self.num_piece)])
 
 
 class MsgType(Enum):
@@ -83,9 +86,10 @@ class PeerConnection:
     
 class PeerConnectionIn(PeerConnection):
     """Handle incoming connection from another peer"""
-    def __init__(self, selfid, conn: socket.socket, peer_addr: str) -> None:
+    def __init__(self, selfid, conn: socket.socket, peer_addr: str, files: file.File_upload) -> None:
         # establish connection
         self.conn = conn
+        self.files = files
         peerid, info_hash = self.accept_handshake()
         print('handshake completed - Accepted! Communating with peerid={} over {}'.format(peerid, conn.getsockname()))
         if peerid is None:
@@ -93,7 +97,7 @@ class PeerConnectionIn(PeerConnection):
         super().__init__(selfid, peerid, peer_addr, info_hash)
         
     
-    def accept_handshake(self) -> tuple[None, None]:
+    def accept_handshake(self) -> tuple:
         """receive + parse the incomming handshake msg"""
         msg_raw = self.conn.recv(common.BUFFER_SIZE)
         msg = common.parse_raw_msg(msg_raw)
@@ -104,8 +108,7 @@ class PeerConnectionIn(PeerConnection):
         # return bitfield message to requesting peer
         
         # TODO: replace with actual file handler
-        self.file = File(msg['info_hash'], 20) # for now just assume fixed size
-        
+        self.file = self.files[msg['info_hash']]
         bitfield_msg = {
             'type': MsgType.BITFIELD.value,
             'bitfield': self.file.get_bitfield()
@@ -119,13 +122,8 @@ class PeerConnectionIn(PeerConnection):
     
     def piece(self, index: int) -> None:
         """send msg with data to target peer"""
-        msg = {
-            'type': MsgType.PIECE.value,
-            'index': index,
-            'data': self.file.get_piece_with_index(index)
-        }
-        msg_raw = common.create_raw_msg(msg)
-        self.conn.sendall(msg_raw)
+        data_raw = self.file.get_piece_with_index(index).data
+        self.conn.sendall(data_raw)
         print('Piece sent, index = {}'.format(index))
         
         
@@ -145,7 +143,7 @@ class PeerConnectionOut(PeerConnection):
         self.conn.connect(self.peer_addr)
         self.handshake()
         print('Connection established with {} over {}'.format(peerid, self.conn.getsockname()))
-        
+                
         
     def handshake(self):
         """send handshake msg to establish connection with another peer"""
@@ -165,7 +163,7 @@ class PeerConnectionOut(PeerConnection):
         print('received bitfield from {}: {}'.format(self.peerid, self.bitfield))
         
         
-    def request(self, index) -> int:
+    def request(self, index) -> tuple:
         """
         request data from target peer,
         return index if download successfully, and None otherwise
@@ -177,17 +175,13 @@ class PeerConnectionOut(PeerConnection):
             'peerid': self.selfid,
             'index': index
         }
+        
         msg_raw = common.create_raw_msg(msg)
         self.conn.sendall(msg_raw)
         
         # get response from node server
-        rep_raw = self.conn.recv(common.PIECE_SIZE)
-        rep = common.parse_raw_msg(rep_raw)
-        if MsgType(rep['type']) == MsgType.END:
-            print('Server closed connection: {}'.format(rep['reason']))
-            self.close_connection()
-        print('Received: {}. {}'.format(index, rep))
-        return index
+        data_raw = self.conn.recv(common.PIECE_SIZE)
+        return data_raw, index
     
     
     def terminate_connection(self, reason) -> None:

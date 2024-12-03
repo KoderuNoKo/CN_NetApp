@@ -2,10 +2,9 @@ import socket
 import hashlib
 import json
 
-
 PIECE_SIZE = 2**19 # 512KB
 CODE = 'utf-8'
-BUFFER_SIZE = 1024
+BUFFER_SIZE = 2**19
 LISTEN_NUM = 10
 PORT_IPC_NODE = 44444
 
@@ -29,7 +28,7 @@ def hash_info(metainfo: dict) -> str:
 
 def parse_raw_msg(msg_raw: bytes) -> dict:
    """Parse the incomming raw bytes into a dict"""
-   print('Parsing message: {}'.format(msg_raw.decode(CODE)))
+   print('Parsing message: {}'.format(json.dumps(msg_raw.decode(CODE), indent=4)))
    return json.loads(msg_raw.decode(CODE))
 
 
