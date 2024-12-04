@@ -273,23 +273,25 @@ class Node:
                         print('submit_info() failed at tracker: {}'.format(rep['failure_reason']))
                         
                 elif cli_command['func'] == 'get_file':
-                    magnet_text = cli_command['magnet_text']
-                    if cli_command['magnet_text'] in self.file_list_info.keys():
-                        print('File already exist! check repository!^_^')
-                        continue
-                    print('Requesting tracker for torrent: {}'.format(magnet_text))
-                    rep = self.get_list(magnet_text)
-                    
-                    # request failed at server
-                    if rep['failure_reason'] is not None:
-                        print('get_list() failed at server: {}'.format(rep['failure_reason']))
-                        continue
-                    
-                    elif rep['warning_msg'] is not None:
-                        print('Warning: {}'.format(rep['warning_msg']))
+                    magnet_texts = cli_command['magnet_text']
+                    filenames = cli_command['filename']
+                    for magnet_text, filename in zip(magnet_texts.split(','), filenames.split(',')):
+                        if cli_command['magnet_text'] in self.file_list_info.keys():
+                            print('File already exist! check repository!^_^')
+                            continue
+                        print('Requesting tracker for torrent: {}'.format(magnet_text))
+                        rep = self.get_list(magnet_text)
                         
-                    tdownload = threading.Thread(target=self.thread_download, args=(magnet_text, cli_command['filename'], rep['peers']))
-                    tdownload.start()
+                        # request failed at server
+                        if rep['failure_reason'] is not None:
+                            print('get_list() failed at server: {}'.format(rep['failure_reason']))
+                            continue
+                        
+                        elif rep['warning_msg'] is not None:
+                            print('Warning: {}'.format(rep['warning_msg']))
+                            
+                        tdownload = threading.Thread(target=self.thread_download, args=(magnet_text, filename, rep['peers']))
+                        tdownload.start()
                     
                 else:
                     print('Invalid command!')

@@ -12,7 +12,7 @@ PORT_IPC_NODE = 44444
 def get_host_default_interface_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-       s.connect(('1.1.1.1', 80))    # init a connection to obtain an socket from the OS
+       s.connect(('1.1.1.1', 80))   # init a connection to obtain an socket from the OS
        ip = s.getsockname()[0]      # retrieve the IP part from the socket
     except Exception:
        ip = '127.0.0.1'     # NOTE: change to machine ipaddress manually when run

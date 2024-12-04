@@ -93,11 +93,8 @@ class Tracker:
         response = ''
 
         try:
-            print('ackkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk')
             data_raw = conn.recv(common.BUFFER_SIZE)
-            print('DASDFEAF WSDCSA ++++++++++++++++++++++++++++++++++++')
             peer_request = common.parse_raw_msg(data_raw)
-            print('Funck this shit-------------------------------------')
             print(json.dumps(peer_request, indent=4))
             
             if peer_request['func'] == 'submit_info':
@@ -143,6 +140,6 @@ class Tracker:
 
 if __name__ == '__main__':
     hostip = common.get_host_default_interface_ip()
-    port = 45785
+    port = 22236
     tracker = Tracker(hostip, port)
     tracker.server_program()
