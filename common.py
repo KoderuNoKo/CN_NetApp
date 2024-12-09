@@ -2,11 +2,11 @@ import socket
 import hashlib
 import json
 
-PIECE_SIZE = 2**19 # 512KB
+PIECE_SIZE = 2**12 # 512KB
 CODE = 'utf-8'
 BUFFER_SIZE = 2**19
 LISTEN_NUM = 10
-PORT_IPC_NODE = 44444
+PORT_IPC_NODE = 55555
 
 
 def get_host_default_interface_ip():

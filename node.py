@@ -2,8 +2,6 @@ import socket
 import threading
 import os
 import argparse
-import math
-import json
 
 import common
 import file
@@ -295,10 +293,7 @@ class Node:
                     
                 else:
                     print('Invalid command!')
-                
-                
-                print(rep)    
-    
+                    
     
 if __name__ == '__main__':
     """Initialize node agent"""

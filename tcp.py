@@ -181,6 +181,8 @@ class PeerConnectionOut(PeerConnection):
         
         # get response from node server
         data_raw = self.conn.recv(common.PIECE_SIZE)
+        print('Piece----------------------{}'.format(index))
+        print(len(data_raw))
         return data_raw, index
     
     

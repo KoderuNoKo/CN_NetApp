@@ -67,7 +67,7 @@ class File_upload:
 
     def get_metainfo(self) -> dict:
         """Return the file's metadata."""
-        return self.metainfo
+        return {k: v for k, v in self.metainfo.items() if k != 'pieces'}
 
 
     def get_piece_with_index(self, index):
