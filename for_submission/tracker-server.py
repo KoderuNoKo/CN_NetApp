@@ -1,30 +1,10 @@
 import socket
 import threading
 import common
-import math
 
 import json
 
 DEFAULT_TRACKER_ID = 1 # single centralized tracker server
-
-# class Torrent: 
-#     """represent the metainfo file on tracker"""
-#     def __init__(self, tracker_ip: str, filename: str, filesize: int, piece_size: int, pieces_list: list=None) -> None:
-#         self.info = {
-#             'name': filename,
-#             'piece_length': piece_size,
-#             # 'pieces': pieces_list, not yet implemented
-#             'piece_count': math.ceil(filesize/piece_size)
-#         }
-#         self.announce = tracker_ip  # announce URL of the tracker
-        
-        
-#     def to_dict(self):
-#         return {
-#             "metainfo": self.info,
-#             "announce": self.announce
-#         }
-
 
 class Tracker:
     def __init__(self, ip, port):
@@ -46,10 +26,6 @@ class Tracker:
                     'peers': peers
         }
     
-    # def tracker_approve(self, approved=True) -> str:
-    #     """Approval of node request during handshaking"""
-    #     return 'OK'
-    
     
     def update_torrents_list(self) -> None:
         """Write torrents into a text file for peers to view"""
@@ -65,11 +41,18 @@ class Tracker:
         peerport = peer_msg['port']
         files = peer_msg['file_info']
         hash_codes = [file['total_hash'] for file in files]
-        for hash_code, file in zip(hash_codes, files):
-            if hash_code in self.torrent_track.keys():
-                self.torrent_track[hash_code]['peers'].append((peerid, peerip, peerport))
-            else:
-                self.torrent_track[hash_code] = dict(torrent = file, peers = [(peerid, peerip, peerport)])
+        self.torrent_track = {
+            hash_code: {
+                'torrent': self.torrent_track[hash_code]['torrent']
+                if hash_code in self.torrent_track
+                else file,
+                
+                'peers': self.torrent_track[hash_code]['peers'] + [(peerid, peerip, peerport)]
+                if hash_code in self.torrent_track
+                else [(peerid, peerip, peerport)],
+            }
+            for hash_code, file in zip(hash_codes, files)
+        }  
         self.update_torrents_list()
             
             
