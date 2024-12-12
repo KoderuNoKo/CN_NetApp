@@ -3,25 +3,27 @@ import threading
 import common
 import math
 
+import json
+
 DEFAULT_TRACKER_ID = 1 # single centralized tracker server
 
-class Torrent: 
-    """represent the metainfo file on tracker"""
-    def __init__(self, tracker_ip: str, filename: str, filesize: int, piece_size: int, pieces_list: list=None) -> None:
-        self.info = {
-            'name': filename,
-            'piece_length': piece_size,
-            # 'pieces': pieces_list, not yet implemented
-            'piece_count': math.ceil(filesize/piece_size)
-        }
-        self.announce = tracker_ip  # announce URL of the tracker
+# class Torrent: 
+#     """represent the metainfo file on tracker"""
+#     def __init__(self, tracker_ip: str, filename: str, filesize: int, piece_size: int, pieces_list: list=None) -> None:
+#         self.info = {
+#             'name': filename,
+#             'piece_length': piece_size,
+#             # 'pieces': pieces_list, not yet implemented
+#             'piece_count': math.ceil(filesize/piece_size)
+#         }
+#         self.announce = tracker_ip  # announce URL of the tracker
         
         
-    def to_dict(self):
-        return {
-            "metainfo": self.info,
-            "announce": self.announce
-        }
+#     def to_dict(self):
+#         return {
+#             "metainfo": self.info,
+#             "announce": self.announce
+#         }
 
 
 class Tracker:
@@ -52,8 +54,7 @@ class Tracker:
     def update_torrents_list(self) -> None:
         """Write torrents into a text file for peers to view"""
         with open('torrents_list.txt', mode='w') as file:
-            [file.write('File name: {}\nMagnet: {}\n\n'.format(self.torrent_track[info_hash]['torrent'].info['name'], info_hash)) 
-             for info_hash in self.torrent_track.keys()]
+            [file.write('{}: {}\n\n'.format(key, item['torrent'])) for key, item in self.torrent_track.items()]
         
 
     def parse_node_submit_info(self, peer_msg: dict) -> None:
@@ -63,19 +64,12 @@ class Tracker:
         peerip = peer_msg['ip']
         peerport = peer_msg['port']
         files = peer_msg['file_info']
-        hash_codes = [common.hash_info(file) for file in files]
-        self.torrent_track = {
-            hash_code: {
-                'torrent': self.torrent_track[hash_code]['torrent']
-                if hash_code in self.torrent_track
-                else Torrent(self.id, file['name'], file['size'], file['piece_length']),
-                
-                'peers': self.torrent_track[hash_code]['peers'] + [(peerid, peerip, peerport)]
-                if hash_code in self.torrent_track
-                else [(peerid, peerip, peerport)],
-            }
-            for hash_code, file in zip(hash_codes, files)
-        }  
+        hash_codes = [file['total_hash'] for file in files]
+        for hash_code, file in zip(hash_codes, files):
+            if hash_code in self.torrent_track.keys():
+                self.torrent_track[hash_code]['peers'].append((peerid, peerip, peerport))
+            else:
+                self.torrent_track[hash_code] = dict(torrent = file, peers = [(peerid, peerip, peerport)])
         self.update_torrents_list()
             
             
@@ -94,6 +88,7 @@ class Tracker:
         try:
             data_raw = conn.recv(common.BUFFER_SIZE)
             peer_request = common.parse_raw_msg(data_raw)
+            print(json.dumps(peer_request, indent=4))
             
             if peer_request['func'] == 'submit_info':
                 # get information submitted from node
@@ -115,7 +110,7 @@ class Tracker:
 
         except Exception as e:
             response = self.tracker_response(failure_reason=str(e))
-            print('Request from peer {}::{addr}\n {} FAILED!\n {}'.format(peer_request['id'], peer_request['func'], e))
+            print('Request from peer {}::{}\n {} FAILED!\n {}'.format(peer_request['id'], addr, peer_request['func'], e))
             
         finally:
             response_raw = common.create_raw_msg(response)

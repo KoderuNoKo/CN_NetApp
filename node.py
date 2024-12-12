@@ -2,19 +2,20 @@ import socket
 import threading
 import os
 import argparse
-import math
 
 import common
-# import file
+import file
 import tcp  # peer wire protocol 
 
 
 class Downloader:
-    def __init__(self, selfid, info_hash, peerlist) -> None:
+    def __init__(self, selfid, info_hash, peerlist, repo_path, filename) -> None:
         self.info_hash = info_hash
         self.peerlist = peerlist
         self.selfid = selfid
-        self.num_piece = None
+        self.num_pieces = None
+        self.repo_path = repo_path
+        self.filename = filename
         
         self.returned_bitfields = dict()                            # bitfields returned by server nodes, updated by multiple thread_client()
         self._lock_returned_bitfields = threading.Lock()            # lock to protect returned_bitfields
@@ -25,8 +26,11 @@ class Downloader:
         self._cond_select_completed = threading.Condition() # notify the threads to start downloading after selection is completed
         self._is_select_completed = False                   # associate with condition
         
-        self.downloaded_list = list()                   # list of pieces that has been successfully downloaded
-        self._lock_downloaded_list = threading.Lock()   # lock to protect downloaded_list
+        # self.downloaded_list = list()                   # list of pieces that has been successfully downloaded
+        # self._lock_downloaded_list = threading.Lock()   # lock to protect downloaded_list
+        
+        self.file_obj = file.File_download()    # object to assemble pieces into file
+        self._lock_file_obj = threading.Lock()  # lock to protect file object
         
         
     def start_download(self) -> None:
@@ -36,7 +40,6 @@ class Downloader:
         
         # As the threads are created, they obtain bitfield immediately after handshake
         # then use the bitfields obtained to select peer
-        
         # wait until all bitfields are returned
         with self._cond_get_bitfield_completed:
             while not self._is_get_bitfield_completed:
@@ -45,6 +48,7 @@ class Downloader:
             
         # TODO: check if all pieces downloaded successfully
         [tclient.join() for tclient in tclients]
+        self.file_obj.save_complete_file(self.repo_path, self.filename)
         return
         
         
@@ -71,10 +75,11 @@ class Downloader:
                 self._cond_select_completed.wait()
         
         # download from target peer
-        print('Download starting...')
         success = [connection.request(index) for index, peerid in enumerate(self.request_list) if peerid == node_serverid]
-        with self._lock_downloaded_list:
-            [self.downloaded_list.append(index) for index in success if index is not None]
+        # with self._lock_downloaded_list:
+        #     [self.downloaded_list.append(index) for index in success[0] if index is not None]
+        with self._lock_file_obj:
+            [self.file_obj.add_piece(data, index) for data, index in success if index is not None]
         connection.terminate_connection(reason='Completed')
         exit()
         
@@ -87,19 +92,19 @@ class Downloader:
             None: a list of tuples (peerid, piece_index) is written to self.request_list
         """
         print('Selecting peer...')  
-        num_pieces = len(list(self.returned_bitfields.values())[0])
-        if not all(len(bitfield) == num_pieces for bitfield in self.returned_bitfields.values()):
+        self.num_pieces = len(list(self.returned_bitfields.values())[0])
+        if not all(len(bitfield) == self.num_pieces for bitfield in self.returned_bitfields.values()):
             raise Exception('Download {} - FAILED! Length of all bitfields must be equal in length!'.format(self.info_hash))
         
         peer_piece_count = {peer: 0 for peer in self.returned_bitfields}    # count of pieces each peer has
-        pieces_needed = list(range(num_pieces))                             # track pieces to be assigned
-        piece_peers = {i: [] for i in range(num_pieces)}                    # available peers for each piece
+        pieces_needed = list(range(self.num_pieces))                             # track pieces to be assigned
+        piece_peers = {i: [] for i in range(self.num_pieces)}                    # available peers for each piece
         for peer, bitfield in self.returned_bitfields.items():
             for i, has_piece in enumerate(bitfield):
                 if has_piece:
                     piece_peers[i].append(peer)
                     
-        self.request_list = [None] * num_pieces                     # selected peers for each piece
+        self.request_list = [None] * self.num_pieces                     # selected peers for each piece
         
         for piece_index in pieces_needed:
             available_peers = piece_peers[piece_index]
@@ -108,6 +113,10 @@ class Downloader:
             self.request_list[piece_index] = selected_peer
             peer_piece_count[selected_peer] += 1
         
+        # prepare file object
+        self.file_obj.set_num_pieces(self.num_pieces)
+        
+        # notify the client_threads to start downloading
         with self._cond_select_completed:
             self._is_select_completed = True
             self._cond_select_completed.notify_all()
@@ -127,12 +136,17 @@ class Node:
         tagent = threading.Thread(target=self.thread_agent)
         
         # file
-        self.repository = 'peer_{}_repository'.format(self.port)
-        os.makedirs(self.repository, exist_ok=True)
-        self.files = {}
-        # self.uploaded = 0
-        # self.downloaded = 0   
-    
+        self.repository_path = 'peer_{}_repository'.format(self.port)
+        os.makedirs(self.repository_path, exist_ok=True)        
+        # init self.files
+        file_list = self.scan_repository()
+        self.file_list_info = dict()
+        
+        for file_name in file_list:
+            file_path = os.path.join(self.repository_path, file_name)
+            temp = file.File_upload(file_path)
+            self.file_list_info[temp.metainfo['total_hash']] = temp
+
         tserver.start()
         tagent.start()
         tserver.join()
@@ -141,42 +155,33 @@ class Node:
 
     def scan_repository(self):
         """Scan the repository folder for available files."""
-        file_list = os.listdir(self.repository)
+        file_list = os.listdir(self.repository_path)
         if not file_list:
-            print('Repository {} is empty. Please add files.'.format(self.repository))
+            print('Repository {} is empty. Please add files.'.format(self.repository_path))
         return file_list
     
     
     def submit_info(self) -> dict:
         """Register this peer's files with the tracker. Return the response showing the result to the cli"""
-        file_list = self.scan_repository()
-        file_list_info = []
-        
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
                 s.connect(self.tracker_address)
-                #s.sendall(f"Submit_info: {self.ip} {self.port}".encode('utf-8'))
-                for file_name in file_list:
-                    file_info = {}
-                    file_path = os.path.join(self.repository, file_name)
-                    if os.path.isfile(file_path):
-                        file_info['name'] = file_name
-                        file_info['piece_length'] = common.PIECE_SIZE
-                        file_info['size'] = os.path.getsize(file_path)
-                        file_list_info.append(file_info)
-                # file_list_str = ";".join(file_list)
-
                 data_send = {
                     'func': 'submit_info',
                     'id': self.peerid, 
                     'ip': self.ip, 
                     'port':self.port, 
-                    'file_info': file_list_info
+                    'file_info': [file.get_metainfo() for key, file in self.file_list_info.items()]
                 }
                 
+                # print('\n\n\nSending this to tracker:')
+                # print(json.dumps(data_send, indent=4))
+                
                 data_raw = common.create_raw_msg(data_send)
+                print('Submitting data to tracker')
                 s.sendall(data_raw)
-                print('submit files: {}'.format(file_list))
+                print('Submit to server completed')
+                print('submit files: {}'.format([file_info.get_metainfo()['name'] for key, file_info in self.file_list_info.items()]))
                                 
             finally:
                 # receive response from server
@@ -213,7 +218,7 @@ class Node:
     def serve_incoming_connection(self, conn: socket.socket, addr):
         """handle incoming connection from other peers"""
         print('Starting connection from {}'.format(addr))
-        connection = tcp.PeerConnectionIn(selfid=self.peerid, conn=conn, peer_addr=addr)  
+        connection = tcp.PeerConnectionIn(selfid=self.peerid, conn=conn, peer_addr=addr, files=self.file_list_info)  
         while connection.is_active:
             msg_raw = conn.recv(common.BUFFER_SIZE)
             msg = common.parse_raw_msg(msg_raw)
@@ -239,8 +244,8 @@ class Node:
                 nconn.start()
         
                 
-    def thread_download(self, info_hash: str, peerlist: list):
-        d = Downloader(self.peerid, info_hash, peerlist)
+    def thread_download(self, info_hash: str, filename: str, peerlist: list):
+        d = Downloader(self.peerid, info_hash, peerlist, self.repository_path, filename)
         d.start_download()
         print('Download completed!')
         exit()
@@ -266,27 +271,29 @@ class Node:
                         print('submit_info() failed at tracker: {}'.format(rep['failure_reason']))
                         
                 elif cli_command['func'] == 'get_file':
-                    magnet_text = cli_command['magnet_text']
-                    print('Requesting tracker for torrent: {}'.format(magnet_text))
-                    rep = self.get_list(magnet_text)
-                    
-                    # request failed at server
-                    if rep['failure_reason'] is not None:
-                        print('get_list() failed at server: {}'.format(rep['failure_reason']))
-                        continue
-                    
-                    elif rep['warning_msg'] is not None:
-                        print('Warning: {}'.format(rep['warning_msg']))
+                    magnet_texts = cli_command['magnet_text']
+                    filenames = cli_command['filename']
+                    for magnet_text, filename in zip(magnet_texts.split(','), filenames.split(',')):
+                        if cli_command['magnet_text'] in self.file_list_info.keys():
+                            print('File already exist! check repository!^_^')
+                            continue
+                        print('Requesting tracker for torrent: {}'.format(magnet_text))
+                        rep = self.get_list(magnet_text)
                         
-                    tdownload = threading.Thread(target=self.thread_download, args=(magnet_text, rep['peers']))
-                    tdownload.start()
+                        # request failed at server
+                        if rep['failure_reason'] is not None:
+                            print('get_list() failed at server: {}'.format(rep['failure_reason']))
+                            continue
+                        
+                        elif rep['warning_msg'] is not None:
+                            print('Warning: {}'.format(rep['warning_msg']))
+                            
+                        tdownload = threading.Thread(target=self.thread_download, args=(magnet_text, filename, rep['peers']))
+                        tdownload.start()
                     
                 else:
                     print('Invalid command!')
-                
-                
-                print(rep)    
-    
+                    
     
 if __name__ == '__main__':
     """Initialize node agent"""

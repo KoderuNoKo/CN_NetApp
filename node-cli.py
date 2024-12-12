@@ -19,7 +19,8 @@ def get_file(args):
     """download a file"""
     command = {
         'func': 'get_file',
-        'magnet_text': args.magnet
+        'magnet_text': args.magnet,
+        'filename': args.filename
     }
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as cli_sock:
         cli_sock.connect(('localhost', common.PORT_IPC_NODE))
@@ -40,6 +41,7 @@ class NodeCLI:
         
         # for get_file
         self.parser.add_argument('--magnet')
+        self.parser.add_argument('--filename')
         
         
     def run(self):

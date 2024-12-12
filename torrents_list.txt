@@ -1,9 +1,12 @@
-File name: Chapter_1_v8.0.pdf
-Magnet: 0926413a21861516dc6691efbdba7fe470ec9a81
+bb4fc16945f4dc662599bfc8a3af882a1fbf098c: {'name': 'assignment1_report.pdf', 'length': 491718, 'piece_size': 131072, 'num_pieces': 4, 'total_hash': 'bb4fc16945f4dc662599bfc8a3af882a1fbf098c'}
 
-File name: Chapter_2_v8.0.pdf
-Magnet: 176617ce6ba6e0170087ec783211314e4cd2cc34
+d4e9f75effd7ea9c435db7d9ac75548d536f69ef: {'name': 'assignment2_report.pdf', 'length': 593982, 'piece_size': 131072, 'num_pieces': 5, 'total_hash': 'd4e9f75effd7ea9c435db7d9ac75548d536f69ef'}
 
-File name: Chapter_3_v8.0.pdf
-Magnet: bc5366f4f30e403ee5a53a538aeaa085897ec68d
+38db95c2cb5a575446de8185179c6b48df4edbd0: {'name': 'README.md', 'length': 126, 'piece_size': 131072, 'num_pieces': 1, 'total_hash': '38db95c2cb5a575446de8185179c6b48df4edbd0'}
+
+746cef45b25792ac1b79081f5474abca3cc37e1f: {'name': 'a1.pdf', 'length': 491718, 'piece_size': 131072, 'num_pieces': 4, 'total_hash': '746cef45b25792ac1b79081f5474abca3cc37e1f'}
+
+47434a1d14b02647a4f3692d25cdf58acafaf7cd: {'name': 'a2.pdf', 'length': 593982, 'piece_size': 131072, 'num_pieces': 5, 'total_hash': '47434a1d14b02647a4f3692d25cdf58acafaf7cd'}
+
+b6d9aef06aa2f5258c456124f4e74b8af060bdf2: {'name': 'read.md', 'length': 126, 'piece_size': 131072, 'num_pieces': 1, 'total_hash': 'b6d9aef06aa2f5258c456124f4e74b8af060bdf2'}
 
